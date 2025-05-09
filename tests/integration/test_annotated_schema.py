@@ -1,5 +1,9 @@
 from dataclasses import dataclass, field
+from enum import Enum
+from typing import Literal
 
+from jsonschema import Draft202012Validator
+from apischema.aliases import alias
 from graphql.utilities import print_schema
 
 from apischema import schema, type_name
@@ -83,4 +87,151 @@ type A {
 
 """type description"""
 scalar someInt'''
+    )
+
+
+class AllTypes(str, Enum):
+    type1 = "type1"
+    type2 = "type2"
+
+
+@dataclass
+class BaseClassA:
+    typ: AllTypes
+
+
+@dataclass
+class ClassA1(BaseClassA):
+    typ: Literal[AllTypes.type1]
+    a_member: int
+
+
+@dataclass
+class ClassA2(BaseClassA):
+    typ: Literal[AllTypes.type2]
+    b_member: str
+
+
+@dataclass(slots=True)
+class BaseClassB:
+    __typ: AllTypes = field(metadata=alias("type"))
+
+
+@dataclass(slots=True)
+class ClassB1(BaseClassB):
+    __typ: Literal[AllTypes.type1] = field(metadata=alias("type"))
+    a_member: int
+
+
+@dataclass(slots=True)
+class ClassB2(BaseClassB):
+    __typ: Literal[AllTypes.type2] = field(metadata=alias("type"))
+    b_member: str
+
+
+def test_advanced_schema():
+    assert (
+        Draft202012Validator.check_schema(serialization_schema(ClassA1 | ClassA2))
+        is None
+        and Draft202012Validator.check_schema(deserialization_schema(ClassA1 | ClassA2))
+        is None
+    )
+    assert (
+        deserialization_schema(ClassA1 | ClassA2)
+        == serialization_schema(ClassA1 | ClassA2)
+        == {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "typ": {"type": "string", "const": AllTypes.type1},
+                        "a_member": {"type": "integer"},
+                    },
+                    "required": ["typ", "a_member"],
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "typ": {"type": "string", "const": AllTypes.type2},
+                        "b_member": {"type": "string"},
+                    },
+                    "required": ["typ", "b_member"],
+                    "additionalProperties": False,
+                },
+            ],
+            "$schema": "http://json-schema.org/draft/2020-12/schema#",
+        }
+    )
+    assert (
+        Draft202012Validator.check_schema(serialization_schema(ClassB1 | ClassB2))
+        is None
+        and Draft202012Validator.check_schema(deserialization_schema(ClassB1 | ClassB2))
+        is None
+    )
+    assert (
+        deserialization_schema(ClassB1 | ClassB2)
+        == serialization_schema(ClassB1 | ClassB2)
+        == {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "const": AllTypes.type1},
+                        "a_member": {"type": "integer"},
+                    },
+                    "required": ["type", "a_member"],
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "const": AllTypes.type2},
+                        "b_member": {"type": "string"},
+                    },
+                    "required": ["type", "b_member"],
+                    "additionalProperties": False,
+                },
+            ],
+            "$schema": "http://json-schema.org/draft/2020-12/schema#",
+        }
+    )
+    assert (
+        Draft202012Validator.check_schema(
+            serialization_schema(ClassB1 | ClassB2, all_refs=True)
+        )
+        is None
+        and Draft202012Validator.check_schema(
+            deserialization_schema(ClassB1 | ClassB2, all_refs=True)
+        )
+        is None
+    )
+    print(deserialization_schema(ClassB1 | ClassB2, all_refs=True))
+    assert (
+        deserialization_schema(ClassB1 | ClassB2, all_refs=True)
+        == serialization_schema(ClassB1 | ClassB2, all_refs=True)
+        == {
+            "anyOf": [{"$ref": "#/$defs/ClassB1"}, {"$ref": "#/$defs/ClassB2"}],
+            "$defs": {
+                "ClassB1": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "const": AllTypes.type1},
+                        "a_member": {"type": "integer"},
+                    },
+                    "required": ["type", "a_member"],
+                    "additionalProperties": False,
+                },
+                "ClassB2": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "const": AllTypes.type2},
+                        "b_member": {"type": "string"},
+                    },
+                    "required": ["type", "b_member"],
+                    "additionalProperties": False,
+                },
+            },
+            "$schema": "http://json-schema.org/draft/2020-12/schema#",
+        }
     )
